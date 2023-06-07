@@ -1,0 +1,127 @@
+#pragma kernel UpdateTemperatureGrid
+#pragma kernel FindMinMax
+#pragma kernel NormalizeTexture
+#pragma kernel SetInitialTemperature
+
+Texture2D<float> inputTemperatureGrid;
+Texture2D<float> inputThermalConductivityGrid;
+Texture2D<float> inputHeatGenerationGrid;
+RWTexture2D<float> outputTemperatureGrid;
+
+uint inputTemperatureGridWidth;
+uint inputTemperatureGridHeight;
+
+float cellSize;
+float updateIntervalSeconds;
+float volumetricHeatCapacity;
+float initialAirTemperature;
+
+[numthreads(16, 16, 1)]
+void UpdateTemperatureGrid(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < inputTemperatureGridWidth && id.y < inputTemperatureGridHeight)
+    {
+
+        float boundaryTemperature = initialAirTemperature;
+        
+        if (id.x < 2 || id.x > inputTemperatureGridWidth - 3 || id.y < 2 || id.y > inputTemperatureGridHeight - 3)
+        {
+            outputTemperatureGrid[id.xy] = boundaryTemperature;
+            return;
+        }
+
+        float tempDiffXRight = (inputTemperatureGrid[uint2(id.x + 2, id.y)] - inputTemperatureGrid[uint2(id.x, id.y)]) / (2 * cellSize);
+        float tempDiffXLeft = (inputTemperatureGrid[uint2(id.x, id.y)] - inputTemperatureGrid[uint2(id.x - 2, id.y)]) / (2 * cellSize);
+
+        float kTempDiffXRight = inputThermalConductivityGrid[uint2(id.x + 1, id.y)] * tempDiffXRight;
+        float kTempDiffXLeft = inputThermalConductivityGrid[uint2(id.x - 1, id.y)] * tempDiffXLeft;
+
+        float dkTempDiff_dx = (kTempDiffXRight - kTempDiffXLeft) / (2 * cellSize);
+
+        float tempDiffYUp = (inputTemperatureGrid[uint2(id.x, id.y + 2)] - inputTemperatureGrid[uint2(id.x, id.y)]) / (2 * cellSize);
+        float tempDiffYDown = (inputTemperatureGrid[uint2(id.x, id.y)] - inputTemperatureGrid[uint2(id.x, id.y - 2)]) / (2 * cellSize);
+
+        float kTempDiffYUp = inputThermalConductivityGrid[uint2(id.x, id.y + 1)] * tempDiffYUp;
+        float kTempDiffYDown = inputThermalConductivityGrid[uint2(id.x, id.y - 1)] * tempDiffYDown;
+
+        float dkTempDiff_dy = (kTempDiffYUp - kTempDiffYDown) / (2 * cellSize);
+
+        float heatGeneration = inputHeatGenerationGrid[id.xy];
+
+        float newTemperature = inputTemperatureGrid[id.xy] + (updateIntervalSeconds) * ((dkTempDiff_dx + dkTempDiff_dy + heatGeneration) / volumetricHeatCapacity);
+
+        outputTemperatureGrid[id.xy] = newTemperature;
+    }
+}
+
+
+// Struct to hold the result of each thread
+struct ThreadResult {
+    float minValue; // Minimum red value in the portion processed by this thread
+    float maxValue; // Maximum red value in the portion processed by this thread
+};
+
+// Declare the texture and result buffer
+Texture2D<float> inputTexture;
+uint inputTextureWidth;
+uint inputTextureHeight;
+
+RWStructuredBuffer<ThreadResult> resultBuffer;
+
+[numthreads(16, 16, 1)] // Set the thread group size
+void FindMinMax(uint3 threadID : SV_DispatchThreadID) {
+    // Calculate the portion of the texture that this thread will process
+    uint2 texCoord = uint2(threadID.xy * uint2(16, 16));
+    uint2 maxCoord = min(texCoord + uint2(16, 16), uint2(inputTextureWidth, inputTextureHeight));
+
+    // Initialize the minimum and maximum red values
+    float minValue = 1.#INF;
+    float maxValue = -1.#INF;
+
+    // Iterate over the portion of the texture processed by this thread
+    for (uint y = texCoord.y; y < maxCoord.y; y++) {
+        for (uint x = texCoord.x; x < maxCoord.x; x++) {
+            float red = inputTexture[uint2(x, y)].r;
+
+            // Update the minimum and maximum red values if needed
+            minValue = min(minValue, red);
+            maxValue = max(maxValue, red);
+        }
+    }
+
+    // Write the result to the result buffer
+    ThreadResult result;
+    result.minValue = minValue;
+    result.maxValue = maxValue;
+    resultBuffer[threadID.y * inputTextureWidth / 16 + threadID.x] = result;
+}
+
+
+
+RWTexture2D<float> outputTexture;
+float minValue;
+float maxValue;
+
+[numthreads(16, 16, 1)]
+void NormalizeTexture(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < inputTextureWidth && id.y < inputTextureHeight)
+    {
+        float value = inputTexture[id.xy];
+        float normalizedValue = (value - minValue) / (maxValue - minValue);
+        outputTexture[id.xy] = normalizedValue;
+    }
+}
+
+
+
+
+uint outputTextureWidth;
+uint outputTextureHeight;
+float initialTemperature;
+
+[numthreads(16, 16, 1)]
+void SetInitialTemperature(uint3 id : SV_DispatchThreadID)
+{
+    outputTexture[id.xy] = initialTemperature;
+}

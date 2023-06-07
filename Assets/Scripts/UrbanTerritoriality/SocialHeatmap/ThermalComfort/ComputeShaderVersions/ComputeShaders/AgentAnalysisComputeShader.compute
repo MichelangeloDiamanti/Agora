@@ -1,0 +1,94 @@
+#pragma kernel UpdateAgentTrajectories
+#pragma kernel FindMinMax
+#pragma kernel NormalizeTexture
+
+// Struct to hold the result of each thread
+struct ThreadResult {
+    float minValue; // Minimum red value in the portion processed by this thread
+    float maxValue; // Maximum red value in the portion processed by this thread
+};
+
+RWTexture2D<float> heatGenerationMap;
+uint heatGenerationMapWidth;
+uint heatGenerationMapHeight;
+Texture2D<float4> agentData; // Renamed from agentPositions, because it now contains more than just the positions.
+uint agentCount;
+
+[numthreads(16, 16, 1)]
+void UpdateAgentTrajectories(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < heatGenerationMapWidth && id.y < heatGenerationMapHeight)
+    {
+        float heat = 0.0;
+
+        for (uint i = 0; i < agentCount; i++)
+        {
+            float4 agentDataItem = agentData[float2(i, 0)];
+            float2 agentPos = agentDataItem.xy;
+            float agentHeatGenerationRate = agentDataItem.z;
+            float agentHeatGenerationRadius = agentDataItem.w;
+
+            float dist = distance(float2(id.x, id.y), agentPos);
+
+            if (dist <= agentHeatGenerationRadius)
+            {
+                heat += agentHeatGenerationRate;
+            }
+        }
+
+        heatGenerationMap[id.xy] += heat;
+    }
+}
+
+
+// Declare the texture and result buffer
+Texture2D<float> inputTexture;
+uint inputTextureWidth;
+uint inputTextureHeight;
+
+RWStructuredBuffer<ThreadResult> resultBuffer;
+
+[numthreads(16, 16, 1)] // Set the thread group size
+void FindMinMax(uint3 threadID : SV_DispatchThreadID) {
+    // Calculate the portion of the texture that this thread will process
+    uint2 texCoord = uint2(threadID.xy * uint2(16, 16));
+    uint2 maxCoord = min(texCoord + uint2(16, 16), uint2(inputTextureWidth, inputTextureHeight));
+
+    // Initialize the minimum and maximum red values
+    float minValue = 1.#INF;
+    float maxValue = -1.#INF;
+
+    // Iterate over the portion of the texture processed by this thread
+    for (uint y = texCoord.y; y < maxCoord.y; y++) {
+        for (uint x = texCoord.x; x < maxCoord.x; x++) {
+            float red = inputTexture[uint2(x, y)].r;
+
+            // Update the minimum and maximum red values if needed
+            minValue = min(minValue, red);
+            maxValue = max(maxValue, red);
+        }
+    }
+
+    // Write the result to the result buffer
+    ThreadResult result;
+    result.minValue = minValue;
+    result.maxValue = maxValue;
+    resultBuffer[threadID.y * inputTextureWidth / 16 + threadID.x] = result;
+}
+
+
+
+RWTexture2D<float> outputTexture;
+float minValue;
+float maxValue;
+
+[numthreads(16, 16, 1)]
+void NormalizeTexture(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < inputTextureWidth && id.y < inputTextureHeight)
+    {
+        float value = inputTexture[id.xy];
+        float normalizedValue = (value - minValue) / (maxValue - minValue);
+        outputTexture[id.xy] = normalizedValue;
+    }
+}

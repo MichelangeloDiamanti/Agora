@@ -1,0 +1,91 @@
+#pragma kernel DrawDiscomfort
+#pragma kernel FindMinMax
+#pragma kernel NormalizeTexture
+
+struct AgentInfo {
+    float2 gridPosition;
+    float discomfortRadius;
+    float discomfort;
+};
+
+StructuredBuffer<AgentInfo> agentInfoBuffer;
+uint agentCount;
+RWTexture2D<float> discomfortMap;
+uint discomfortMapWidth;
+uint discomfortMapHeight;
+
+[numthreads(16, 16, 1)]
+void DrawDiscomfort(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < discomfortMapWidth && id.y < discomfortMapHeight)
+    {
+        float discomfortSum = 0;
+
+        // Iterate over agentInfoBuffer and accumulate discomfort values
+        for (uint i = 0; i < agentCount; i++)
+        {
+            AgentInfo agentInfo = agentInfoBuffer[i];
+
+            float distance = length(float2(id.x, id.y) - agentInfo.gridPosition);
+
+            if (distance <= agentInfo.discomfortRadius)
+            {
+                discomfortSum += agentInfo.discomfort;
+            }
+        }
+
+        // Write the result to the discomfortMap
+        discomfortMap[id.xy] = discomfortSum;
+    }
+}
+
+Texture2D<float> inputTexture;
+uint inputTextureWidth;
+uint inputTextureHeight;
+RWStructuredBuffer<float> minValues;
+RWStructuredBuffer<float> maxValues;
+
+[numthreads(16, 16, 1)]
+void FindMinMax(uint3 id : SV_DispatchThreadID, uint3 groupID : SV_GroupID)
+{
+    uint localID = id.y * 16 + id.x;
+
+    uint2 globalSize = uint2(inputTextureWidth, inputTextureHeight);
+    uint2 blockSize = uint2(16, 16);
+
+    uint2 blockStart = groupID.xy * blockSize;
+    uint2 blockEnd = min(blockStart + blockSize, globalSize);
+
+    float minValue = 1.#INF;
+    float maxValue = -1.#INF;
+
+    for (uint y = blockStart.y; y < blockEnd.y; ++y)
+    {
+        for (uint x = blockStart.x; x < blockEnd.x; ++x)
+        {
+            float value = inputTexture[uint2(x, y)];
+            minValue = min(minValue, value);
+            maxValue = max(maxValue, value);
+        }
+    }
+
+    minValues[localID] = minValue;
+    maxValues[localID] = maxValue;
+}
+
+
+
+RWTexture2D<float> outputTexture;
+float minValue;
+float maxValue;
+
+[numthreads(16, 16, 1)]
+void NormalizeTexture(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < inputTextureWidth && id.y < inputTextureHeight)
+    {
+        float value = inputTexture[id.xy];
+        float normalizedValue = (value - minValue) / (maxValue - minValue);
+        outputTexture[id.xy] = normalizedValue;
+    }
+}

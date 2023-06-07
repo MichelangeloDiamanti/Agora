@@ -1,0 +1,178 @@
+using System;
+using System.Collections.Generic;
+using System.Xml.Serialization;
+
+namespace MengeXML
+{
+    
+    public class Experiment
+    {
+        [XmlAttribute("version")]
+        public string Version { get; set; }
+
+        [XmlElement("Common")]
+        public ExperimentCommonParameters CommonParameters { get; set; }
+
+        [XmlElement("SpatialQuery")]
+        public SpatialQuery SpatialQuery { get; set; }
+
+        [XmlElement("Elevation")]
+        public Elevation Elevation { get; set; }
+
+        [XmlElement("ObstacleSet")]
+        public ObstacleSet ObstacleSet { get; set; }
+
+        [XmlElement("AgentProfile")]
+        public List<AgentProfile> AgentProfiles { get; set; }
+
+        [XmlElement("AgentGroup")]
+        public List<AgentGroup> AgentGroups { get; set; }
+    }
+
+    
+    public class ExperimentCommonParameters
+    {
+        [XmlAttribute("time_step")]
+        public float TimeStep { get; set; }
+    }
+
+    
+    public class SpatialQuery
+    {
+        [XmlAttribute("type")]
+        public string Type { get; set; }
+
+        [XmlAttribute("test_visibility")]
+        public bool TestVisibility { get; set; }
+
+        [XmlAttribute("file_name")]
+        public string FileName { get; set; }
+    }
+
+    
+    public class Elevation
+    {
+        [XmlAttribute("type")]
+        public string Type { get; set; }
+
+        [XmlAttribute("file_name")]
+        public string FileName { get; set; }
+    }
+
+    
+    public class ObstacleSet
+    {
+        [XmlAttribute("type")]
+        public string Type { get; set; }
+
+        [XmlAttribute("file_name")]
+        public string FileName { get; set; }
+
+        [XmlAttribute("class")]
+        public int Class { get; set; }
+    }
+
+    
+    public class AgentProfile
+    {
+        [XmlAttribute("name")]
+        public string Name { get; set; }
+
+        [XmlElement("Common")]
+        public AgentProfileCommonParameters CommonParameters { get; set; }
+
+        [XmlElement("ORCA")]
+        public AgentProfileORCAParameters ORCAParameters { get; set; }
+    }
+
+    
+    public class AgentProfileCommonParameters
+    {
+        [XmlAttribute("max_angle_vel")]
+        public float MaxAngularVelocity { get; set; }
+
+        [XmlAttribute("max_neighbors")]
+        public int MaxNeighbors { get; set; }
+
+        [XmlAttribute("obstacleSet")]
+        public int ObstacleSet { get; set; }
+
+        [XmlAttribute("neighbor_dist")]
+        public float NeighborDist { get; set; }
+
+        [XmlAttribute("r")]
+        public float Radius { get; set; }
+
+        [XmlAttribute("class")]
+        public int Class { get; set; }
+
+        [XmlAttribute("pref_speed")]
+        public float PreferredSpeed { get; set; }
+
+        [XmlAttribute("max_speed")]
+        public float MaxSpeed { get; set; }
+
+        [XmlAttribute("max_accel")]
+        public float MaxAcceleration { get; set; }
+    }
+
+    
+    public class AgentProfileORCAParameters
+    {
+        [XmlAttribute("tau")]
+        public float Tau { get; set; }
+        [XmlAttribute("tauObst")]
+        public float TauObst { get; set; }
+    }
+
+    
+    public class AgentGroup
+    {
+        [XmlElement("ProfileSelector")]
+        public AgentGroupProfileSelector ProfileSelector { get; set; }
+
+        [XmlElement("StateSelector")]
+        public AgentGroupStateSelector StateSelector { get; set; }
+
+        [XmlElement("Generator")]
+        public AgentGroupGenerator Generator { get; set; }
+    }
+
+    
+    public class AgentGroupProfileSelector
+    {
+        [XmlAttribute("type")]
+        public string Type { get; set; }
+        [XmlAttribute("name")]
+        public string name { get; set; }
+    }
+
+    
+    public class AgentGroupStateSelector
+    {
+        [XmlAttribute("type")]
+        public string Type { get; set; }
+        [XmlAttribute("name")]
+        public string name { get; set; }
+    }
+
+    
+    public class AgentGroupGenerator
+    {
+        [XmlAttribute("type")]
+        public string Type { get; set; }
+
+        [XmlElement("Agent")]
+        public List<AgentGroupAgent> Agents { get; set; }
+    }
+
+    
+    public class AgentGroupAgent
+    {
+        [XmlAttribute("p_x")]
+        public float PositionX { get; set; }
+
+        [XmlAttribute("p_y")]
+        public float PositionY { get; set; }
+    }
+}

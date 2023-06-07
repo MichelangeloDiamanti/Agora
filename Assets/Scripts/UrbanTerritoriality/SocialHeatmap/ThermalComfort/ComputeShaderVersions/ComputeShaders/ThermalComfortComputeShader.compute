@@ -1,0 +1,158 @@
+#pragma kernel CalculatePMV
+#pragma kernel CalculatePPD
+#pragma kernel FindMinMax
+#pragma kernel NormalizeTexture
+
+// Struct to hold the result of each thread
+struct ThreadResult {
+    float minValue; // Minimum red value in the portion processed by this thread
+    float maxValue; // Maximum red value in the portion processed by this thread
+};
+
+
+Texture2D<float> airTemperatureTexture;
+RWTexture2D<float> pmvTexture;
+RWTexture2D<float> ppdTexture;
+
+uint airTemperatureTextureWidth;
+uint airTemperatureTextureHeight;
+
+// Pass in the constants and variables required for the PMV calculation
+float meanRadiantTemperature;
+float CLOTHING_INSULATION;
+float RELATIVE_HUMIDITY;
+float AIR_VELOCITY;
+float M;
+float W;
+float fcl;
+float Icl;
+
+float2 CalculateTcl(float airTemperature)
+{
+    float tcl_guess = airTemperature + 0.5 * (meanRadiantTemperature - airTemperature);
+    float tcl_prev = tcl_guess;
+    float hc = 0.0;
+
+    for (int i = 0; i < 10; ++i) // Limit the loop to 10 iterations
+    {
+        float hc_candidate = 2.38 * pow(abs(tcl_guess - airTemperature), 0.25);
+        hc = max(hc_candidate, 12.1 * sqrt(AIR_VELOCITY));
+
+        float tcl_new = (35.7 - 0.028 * (M - W) - Icl * (3.96 * pow(10, -8) * fcl * (pow((tcl_guess + 273), 4) - pow((meanRadiantTemperature + 273), 4)) + fcl * hc * (tcl_guess - airTemperature))) / (1 + Icl * hc);
+
+        if (abs(tcl_new - tcl_prev) < 1e-6)
+        {
+            tcl_guess = tcl_new;
+            break;
+        }
+        else
+        {
+            tcl_prev = tcl_guess;
+            tcl_guess = tcl_new;
+        }
+    }
+
+    return float2(tcl_guess, hc);
+}
+
+
+float ComputePMV(uint3 id)
+{
+    float pmv = 0.0f;
+    if (id.x < airTemperatureTextureWidth && id.y < airTemperatureTextureHeight)
+    {
+        float airTemperature = airTemperatureTexture[id.xy];
+
+        float expValue = exp((16.6536 - 4030.183) / (airTemperature + 235));
+        float waterVaporPressure = 10 * RELATIVE_HUMIDITY * expValue;
+        
+        float2 tclhc = CalculateTcl(airTemperature);
+        float tcl = tclhc.x;
+        float hc = tclhc.y;
+
+        pmv = (0.303 * exp(-0.036 * M) + 0.028) * ((M - W) - (3.05 * pow(10, -3) * (5733 - 6.99 * (M - W) - waterVaporPressure)) - 0.42 * ((M - W) - 58.15) - (1.7 * pow(10, -5) * M * (5867 - waterVaporPressure)) - 0.0014 * M * (34 - airTemperature) - (3.96 * pow(10, -8) * fcl * (pow((tcl + 273), 4) - pow((meanRadiantTemperature + 273), 4))) - (fcl * hc * (tcl - airTemperature)));
+
+        // float clampedPmv = clamp(pmv, -3.0f, 3.0f);
+        // pmvTexture[id.xy] = clampedPmv;
+        
+        // pmvTexture[id.xy] = pmv;
+    }
+    return pmv;
+}
+
+
+[numthreads(16, 16, 1)]
+void CalculatePMV(uint3 id : SV_DispatchThreadID)
+{
+    float pmv = ComputePMV(id);
+    pmvTexture[id.xy] = pmv;
+}
+
+
+[numthreads(16, 16, 1)]
+void CalculatePPD(uint3 id : SV_DispatchThreadID)
+{
+    float pmv = ComputePMV(id);
+
+    // Clamp the PMV value
+    float clampedPmv = clamp(pmv, -3.0f, 3.0f);
+
+    // Compute the PPD based on the clamped PMV value
+    float ppd = 100.0f - 95.0f * exp(-0.03353 * pow(clampedPmv, 4) - 0.2179 * pow(clampedPmv, 2));
+
+    // Write the PPD value to the output texture or buffer
+    ppdTexture[id.xy] = ppd;
+}
+
+
+// Declare the texture and result buffer
+Texture2D<float> inputTexture;
+uint inputTextureWidth;
+uint inputTextureHeight;
+
+RWStructuredBuffer<ThreadResult> resultBuffer;
+
+[numthreads(16, 16, 1)] // Set the thread group size
+void FindMinMax(uint3 threadID : SV_DispatchThreadID) {
+    // Calculate the portion of the texture that this thread will process
+    uint2 texCoord = uint2(threadID.xy * uint2(16, 16));
+    uint2 maxCoord = min(texCoord + uint2(16, 16), uint2(inputTextureWidth, inputTextureHeight));
+
+    // Initialize the minimum and maximum red values
+    float minValue = 1.#INF;
+    float maxValue = -1.#INF;
+
+    // Iterate over the portion of the texture processed by this thread
+    for (uint y = texCoord.y; y < maxCoord.y; y++) {
+        for (uint x = texCoord.x; x < maxCoord.x; x++) {
+            float red = inputTexture[uint2(x, y)].r;
+
+            // Update the minimum and maximum red values if needed
+            minValue = min(minValue, red);
+            maxValue = max(maxValue, red);
+        }
+    }
+
+    // Write the result to the result buffer
+    ThreadResult result;
+    result.minValue = minValue;
+    result.maxValue = maxValue;
+    resultBuffer[threadID.y * inputTextureWidth / 16 + threadID.x] = result;
+}
+
+
+
+RWTexture2D<float> outputTexture;
+float minValue;
+float maxValue;
+
+[numthreads(16, 16, 1)]
+void NormalizeTexture(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < inputTextureWidth && id.y < inputTextureHeight)
+    {
+        float value = inputTexture[id.xy];
+        float normalizedValue = (value - minValue) / (maxValue - minValue);
+        outputTexture[id.xy] = normalizedValue;
+    }
+}

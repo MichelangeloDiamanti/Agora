@@ -1,0 +1,1 @@
+If you're running a Menge plugin (dll) which depends upon other dlls, the latter need to be placed under the project root folder, or in a folder which is in the SYSTEM PATH. Otherwise, the plugin will fail to load.
