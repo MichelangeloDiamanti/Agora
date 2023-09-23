@@ -84,3 +84,13 @@ crashlytics-build.properties
 
 # Built Visual Studio Code Extensions
 *.vsix
+
+# Dependencies that should be independently installed
+Assets/Plugins/Sirenix.meta
+Assets/Plugins/Sirenix/
+Assets/UMA.meta
+Assets/UMA/
+Assets/PathCreator.meta
+Assets/PathCreator/
+Assets/OpenCVForUnity.meta
+Assets/OpenCVForUnity/
